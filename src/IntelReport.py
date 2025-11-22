@@ -1,0 +1,229 @@
+#!/usr/bin/env python3
+import importlib.metadata
+import io
+import sys
+from collections import namedtuple
+from pathlib import Path
+from typing_extensions import Annotated
+
+import typer
+from gpt4all import GPT4All
+
+MESSAGES = []
+CLI_START_MESSAGE = f"""
+██╗███╗   ██╗████████╗███████╗██╗     ██████╗ ███████╗██████╗  ██████╗ ██████╗ ████████╗
+██║████╗  ██║╚══██╔══╝██╔════╝██║     ██╔══██╗██╔════╝██╔══██╗██╔═══██╗██╔══██╗╚══██╔══╝
+██║██╔██╗ ██║   ██║   █████╗  ██║     ██████╔╝█████╗  ██████╔╝██║   ██║██████╔╝   ██║   
+██║██║╚██╗██║   ██║   ██╔══╝  ██║     ██╔══██╗██╔══╝  ██╔═══╝ ██║   ██║██╔══██╗   ██║   
+██║██║ ╚████║   ██║   ███████╗███████╗██║  ██║███████╗██║     ╚██████╔╝██║  ██║   ██║   
+╚═╝╚═╝  ╚═══╝   ╚═╝   ╚══════╝╚══════╝╚═╝  ╚═╝╚══════╝╚═╝      ╚═════╝ ╚═╝  ╚═╝   ╚═╝   
+"""
+
+# Default directive used when the user does not supply one.
+DEFAULT_DIRECTIVE = (
+    "You are an Intelligence Analyst. Read the following long-form interview transcript. Extract the key intelligence insights only. The task is to produce a concise, factual intelligence briefing in bullet point format. Focus on key events, dates, people, motivations, and implications. Summarize only confirmed or highly relevant insights. Use clear, concise bullet points with no fluff. Respond only with bullet points. Do not include small talk, irrelevant information, speculation, introductions, notes, headers, or explanations."
+)
+
+# Token context window size
+TOKEN_CONTEXT_WINDOW = 2048
+# Approximate tokens per word (conservative estimate)
+TOKENS_PER_WORD = 1.3
+
+# create typer app
+app = typer.Typer()
+
+def _estimate_tokens(text: str) -> int:
+    """Estimate the number of tokens in text using word count."""
+    words = len(text.split())
+    return int(words * TOKENS_PER_WORD)
+
+def _chunk_text_by_tokens(text: str, max_tokens: int) -> list[str]:
+    """Split text into chunks that fit within max_tokens limit."""
+    words = text.split()
+    chunks = []
+    current_chunk = []
+    current_token_count = 0
+    
+    for word in words:
+        word_tokens = max(1, int(len(word) * TOKENS_PER_WORD))
+        
+        if current_token_count + word_tokens > max_tokens and current_chunk:
+            # Start a new chunk
+            chunks.append(" ".join(current_chunk))
+            current_chunk = [word]
+            current_token_count = word_tokens
+        else:
+            current_chunk.append(word)
+            current_token_count += word_tokens
+    
+    # Add the final chunk
+    if current_chunk:
+        chunks.append(" ".join(current_chunk))
+    
+    return chunks
+
+def _read_transcript(transcript_file_path: str | None) -> str:
+    """Read transcript from file if provided."""
+    if transcript_file_path:
+        try:
+            with open(transcript_file_path, "r", encoding="utf-8") as f:
+                return f.read()
+        except Exception as e:
+            print(f"Error reading transcript file: {e}")
+            return ""
+    return ""
+
+def _read_directive(directive_file_path: str | None) -> str:
+    if directive_file_path:
+        try:
+            with open(directive_file_path, "r", encoding="utf-8") as f:
+                return f.read()
+        except Exception:
+            return DEFAULT_DIRECTIVE
+    return DEFAULT_DIRECTIVE
+
+def _process_chunk(gpt4all_instance, directive: str, chunk: str, chunk_num: int, total_chunks: int) -> str:
+    """Process a single transcript chunk and return the response."""
+    message = f"{directive}\n\n[Begin Transcript]\n{chunk}\n[End Transcript]"
+    
+    print(f"\n\n--- Processing chunk {chunk_num}/{total_chunks} ---\n")
+    
+    # Append to messages
+    MESSAGES.append({"role": "user", "content": message})
+    
+    # Execute chat completion with streaming
+    response_generator = gpt4all_instance.generate(
+        message,
+        # preferential kwargs for chat ux
+        max_tokens=4096,  # Increased to prevent cutting off responses
+        temp=0.9,
+        top_k=40,
+        top_p=0.9,
+        min_p=0.0,
+        repeat_penalty=1.1,
+        repeat_last_n=64,
+        n_batch=9,
+        # required kwargs for cli ux (incremental response)
+        streaming=True,
+    )
+    
+    response = io.StringIO()
+    for token in response_generator:
+        print(token, end='', flush=True)
+        response.write(token)
+    
+    response_text = response.getvalue()
+    response.close()
+    
+    # Record assistant's response to messages
+    response_message = {'role': 'assistant', 'content': response_text}
+    gpt4all_instance.current_chat_session.append(response_message)
+    MESSAGES.append(response_message)
+    
+    return response_text
+
+def _main_loop(gpt4all_instance, summarize, transcript, filename, directive):
+    """Process transcript or direct text input."""
+    output_path = Path.cwd() / "reports" / f"{filename}.txt"
+    
+    # Determine the text to process
+    text_to_process = ""
+    if transcript:
+        # Read from transcript file
+        text_to_process = _read_transcript(transcript)
+        if not text_to_process:
+            print("No transcript content found. Using direct input instead.")
+            text_to_process = summarize if summarize else ""
+    else:
+        # Use direct input
+        text_to_process = summarize if summarize else ""
+    
+    if not text_to_process:
+        print("No text provided to process.")
+        return
+    
+    # Split text into chunks based on token limit
+    chunks = _chunk_text_by_tokens(text_to_process, TOKEN_CONTEXT_WINDOW)
+    
+    print(f"\nProcessing {len(chunks)} chunk(s) of transcript...\n")
+    
+    all_responses = []
+    
+    with gpt4all_instance.chat_session():
+        for idx, chunk in enumerate(chunks, 1):
+            response = _process_chunk(gpt4all_instance, directive, chunk, idx, len(chunks))
+            all_responses.append(response)
+    
+    # Write all responses to file
+    print(f"\n\nWriting results to {output_path}...\n")
+    with open(output_path, "a", encoding="utf-8") as file:
+        for idx, response in enumerate(all_responses, 1):
+            if len(chunks) > 1:
+                file.write(f"=== CHUNK {idx} ANALYSIS ===\n")
+            file.write(response + "\n")
+            if len(chunks) > 1:
+                file.write("\n")
+    
+    print(f"Results saved to {output_path}")
+
+@app.command()
+def repl(
+    model: Annotated[
+        str,
+        typer.Option("--model", "-m", help="Model to use for chatbot"),
+    ] = "mistral-7b-instruct-v0.1.Q4_0.gguf",
+    n_threads: Annotated[
+        int,
+        typer.Option("--n-threads", "-t", help="Number of threads to use for chatbot"),
+    ] = None,
+    device: Annotated[
+        str,
+        typer.Option("--device", "-d", help="Device to use for chatbot, e.g. gpu, amd, nvidia, intel. Defaults to CPU."),
+    ] = None,
+    summarize: Annotated[
+        str,
+        typer.Option("--sum", "-s", help="String of text to summarize."),
+    ] = None,
+    transcript: Annotated[
+        str,
+        typer.Option("--transcript", "-x", help="Path to transcript file to process."),
+    ] = None,
+    directive_file: Annotated[
+        str,
+        typer.Option("--directive", "-dir", help="Path to custom directive file."),
+    ] = None,
+    filename: Annotated[
+        str,
+        typer.Option("--file", "-f", help="Name of file to write to."),
+    ] = None,
+):
+    """The CLI read-eval-print loop."""
+    gpt4all_instance = GPT4All(model, device=device)
+
+    # if threads are passed, set them
+    if n_threads is not None:
+        num_threads = gpt4all_instance.model.thread_count()
+        #print(f"\nAdjusted: {num_threads} →", end="")
+
+        # set number of threads
+        gpt4all_instance.model.set_thread_count(n_threads)
+
+        num_threads = gpt4all_instance.model.thread_count()
+        #print(f" {num_threads} threads", end="", flush=True)
+        #print(f"\nUsing {gpt4all_instance.model.thread_count()} threads", end="")
+
+    #print("using model: " + model)
+    print(CLI_START_MESSAGE) 
+
+    directive = _read_directive(directive_file)
+
+    _main_loop(gpt4all_instance, summarize, transcript, filename, directive)
+
+@app.command()
+def version():
+    """The CLI version command."""
+    print(f"")
+
+
+if __name__ == "__main__":
+    app()
