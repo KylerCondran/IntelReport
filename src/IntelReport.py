@@ -2,14 +2,21 @@
 import importlib.metadata
 import io
 import sys
-from collections import namedtuple
+import logging
 from pathlib import Path
 from typing_extensions import Annotated
 
 import typer
 from gpt4all import GPT4All
 
+logging.basicConfig(
+    level=logging.INFO,
+    format='\n%(levelname)s: %(message)s'
+)
+LOGGER = logging.getLogger(__name__)
 MESSAGES = []
+VERSION = '1.0'
+
 CLI_START_MESSAGE = f"""
 ██╗███╗   ██╗████████╗███████╗██╗     ██████╗ ███████╗██████╗  ██████╗ ██████╗ ████████╗
 ██║████╗  ██║╚══██╔══╝██╔════╝██║     ██╔══██╗██╔════╝██╔══██╗██╔═══██╗██╔══██╗╚══██╔══╝
@@ -21,21 +28,19 @@ CLI_START_MESSAGE = f"""
 
 # Default directive used when the user does not supply one.
 DEFAULT_DIRECTIVE = (
-    "You are an Intelligence Analyst. Read the following long-form interview transcript. Extract the key intelligence insights only. The task is to produce a concise, factual intelligence briefing in bullet point format. Focus on key events, dates, people, motivations, and implications. Summarize only confirmed or highly relevant insights. Use clear, concise bullet points with no fluff. Respond only with bullet points. Do not include small talk, irrelevant information, speculation, introductions, notes, headers, or explanations."
+    "You are an Intelligence Analyst. Read the following interview transcript and extract the most important and factual intelligence insights into bullet points. "
+    "Focus on confirmed facts: key events, dates, people, locations, motivations, and implications. "
+    "Formatting rules: "
+    "Every sentence must be a bullet point. "
+    "Do not include paragraphs, explanations, or numbered lists. "
+    "Do not deviate from bullet points under any circumstances. "
 )
 
-# Token context window size
 TOKEN_CONTEXT_WINDOW = 2048
-# Approximate tokens per word (conservative estimate)
 TOKENS_PER_WORD = 1.3
 
 # create typer app
 app = typer.Typer()
-
-def _estimate_tokens(text: str) -> int:
-    """Estimate the number of tokens in text using word count."""
-    words = len(text.split())
-    return int(words * TOKENS_PER_WORD)
 
 def _chunk_text_by_tokens(text: str, max_tokens: int) -> list[str]:
     """Split text into chunks that fit within max_tokens limit."""
@@ -84,9 +89,9 @@ def _read_directive(directive_file_path: str | None) -> str:
 
 def _process_chunk(gpt4all_instance, directive: str, chunk: str, chunk_num: int, total_chunks: int) -> str:
     """Process a single transcript chunk and return the response."""
-    message = f"{directive}\n\n[Begin Transcript]\n{chunk}\n[End Transcript]"
+    message = f"{directive}\n[Begin Transcript]\n{chunk}\n[End Transcript]"
     
-    print(f"\n\n--- Processing chunk {chunk_num}/{total_chunks} ---\n")
+    LOGGER.info(f"Processing Chunk [{chunk_num}/{total_chunks}]")
     
     # Append to messages
     MESSAGES.append({"role": "user", "content": message})
@@ -145,7 +150,7 @@ def _main_loop(gpt4all_instance, summarize, transcript, filename, directive):
     # Split text into chunks based on token limit
     chunks = _chunk_text_by_tokens(text_to_process, TOKEN_CONTEXT_WINDOW)
     
-    print(f"\nProcessing {len(chunks)} chunk(s) of transcript...\n")
+    LOGGER.info(f"Processing {len(chunks)} chunk(s) of transcript...")
     
     all_responses = []
     
@@ -170,15 +175,15 @@ def _main_loop(gpt4all_instance, summarize, transcript, filename, directive):
 def repl(
     model: Annotated[
         str,
-        typer.Option("--model", "-m", help="Model to use for chatbot"),
+        typer.Option("--model", "-m", help="Model to use for analysis."),
     ] = "mistral-7b-instruct-v0.1.Q4_0.gguf",
     n_threads: Annotated[
         int,
-        typer.Option("--n-threads", "-t", help="Number of threads to use for chatbot"),
+        typer.Option("--n-threads", "-t", help="Number of threads to use for analysis."),
     ] = None,
     device: Annotated[
         str,
-        typer.Option("--device", "-d", help="Device to use for chatbot, e.g. gpu, amd, nvidia, intel. Defaults to CPU."),
+        typer.Option("--device", "-d", help="Device to use for analysis, e.g. gpu, amd, nvidia, intel. Defaults to CPU."),
     ] = None,
     summarize: Annotated[
         str,
@@ -194,7 +199,7 @@ def repl(
     ] = None,
     filename: Annotated[
         str,
-        typer.Option("--file", "-f", help="Name of file to write to."),
+        typer.Option("--file", "-f", help="Name of file for output."),
     ] = None,
 ):
     """The CLI read-eval-print loop."""
@@ -203,16 +208,9 @@ def repl(
     # if threads are passed, set them
     if n_threads is not None:
         num_threads = gpt4all_instance.model.thread_count()
-        #print(f"\nAdjusted: {num_threads} →", end="")
-
-        # set number of threads
         gpt4all_instance.model.set_thread_count(n_threads)
-
         num_threads = gpt4all_instance.model.thread_count()
-        #print(f" {num_threads} threads", end="", flush=True)
-        #print(f"\nUsing {gpt4all_instance.model.thread_count()} threads", end="")
 
-    #print("using model: " + model)
     print(CLI_START_MESSAGE) 
 
     directive = _read_directive(directive_file)
@@ -222,8 +220,7 @@ def repl(
 @app.command()
 def version():
     """The CLI version command."""
-    print(f"")
-
+    print(f"IntelReport v{VERSION}")
 
 if __name__ == "__main__":
     app()
