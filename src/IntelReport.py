@@ -14,7 +14,6 @@ logging.basicConfig(
     format='\n%(levelname)s: %(message)s'
 )
 LOGGER = logging.getLogger(__name__)
-MESSAGES = []
 VERSION = '1.0'
 
 CLI_START_MESSAGE = f"""
@@ -93,41 +92,38 @@ def _process_chunk(gpt4all_instance, directive: str, chunk: str, chunk_num: int,
     
     LOGGER.info(f"Processing Chunk [{chunk_num}/{total_chunks}]")
     
-    # Append to messages
-    MESSAGES.append({"role": "user", "content": message})
+    try:
+        # Execute chat completion with streaming
+        response_generator = gpt4all_instance.generate(
+            message,
+            # preferential kwargs for chat ux
+            max_tokens=4096,  # Increased to prevent cutting off responses
+            temp=0.9,
+            top_k=40,
+            top_p=0.9,
+            min_p=0.0,
+            repeat_penalty=1.1,
+            repeat_last_n=64,
+            n_batch=9,
+            # required kwargs for cli ux (incremental response)
+            streaming=True,
+        )
+        
+        response = io.StringIO()
+        for token in response_generator:
+            print(token, end='', flush=True)
+            response.write(token)
+        
+        response_text = response.getvalue()
+        response.close()
+        
+        return response_text
     
-    # Execute chat completion with streaming
-    response_generator = gpt4all_instance.generate(
-        message,
-        # preferential kwargs for chat ux
-        max_tokens=4096,  # Increased to prevent cutting off responses
-        temp=0.9,
-        top_k=40,
-        top_p=0.9,
-        min_p=0.0,
-        repeat_penalty=1.1,
-        repeat_last_n=64,
-        n_batch=9,
-        # required kwargs for cli ux (incremental response)
-        streaming=True,
-    )
-    
-    response = io.StringIO()
-    for token in response_generator:
-        print(token, end='', flush=True)
-        response.write(token)
-    
-    response_text = response.getvalue()
-    response.close()
-    
-    # Record assistant's response to messages
-    response_message = {'role': 'assistant', 'content': response_text}
-    gpt4all_instance.current_chat_session.append(response_message)
-    MESSAGES.append(response_message)
-    
-    return response_text
+    except Exception as e:
+        LOGGER.error(f"Error processing chunk [{chunk_num}/{total_chunks}]: {str(e)}")
+        return ""
 
-def _main_loop(gpt4all_instance, summarize, transcript, filename, directive):
+def _main_loop(model: str, device: str, n_threads: int, summarize: str, transcript: str, filename: str, directive: str):
     """Process transcript or direct text input."""
     output_path = Path.cwd() / "reports" / f"{filename}.txt"
     
@@ -154,13 +150,23 @@ def _main_loop(gpt4all_instance, summarize, transcript, filename, directive):
     
     all_responses = []
     
-    with gpt4all_instance.chat_session():
-        for idx, chunk in enumerate(chunks, 1):
-            response = _process_chunk(gpt4all_instance, directive, chunk, idx, len(chunks))
-            all_responses.append(response)
+    for idx, chunk in enumerate(chunks, 1):
+        # Create a fresh GPT4All instance for each chunk
+        gpt4all_instance = GPT4All(model, device=device)
+        
+        # Set thread count if specified
+        if n_threads is not None:
+            gpt4all_instance.model.set_thread_count(n_threads)
+        
+        response = _process_chunk(gpt4all_instance, directive, chunk, idx, len(chunks))
+        all_responses.append(response)
     
     # Write all responses to file
     print(f"\n\nWriting results to {output_path}...\n")
+    
+    # Ensure the output directory exists
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    
     with open(output_path, "a", encoding="utf-8") as file:
         for idx, response in enumerate(all_responses, 1):
             if len(chunks) > 1:
@@ -203,19 +209,11 @@ def repl(
     ] = None,
 ):
     """The CLI read-eval-print loop."""
-    gpt4all_instance = GPT4All(model, device=device)
-
-    # if threads are passed, set them
-    if n_threads is not None:
-        num_threads = gpt4all_instance.model.thread_count()
-        gpt4all_instance.model.set_thread_count(n_threads)
-        num_threads = gpt4all_instance.model.thread_count()
-
     print(CLI_START_MESSAGE) 
 
     directive = _read_directive(directive_file)
 
-    _main_loop(gpt4all_instance, summarize, transcript, filename, directive)
+    _main_loop(model, device, n_threads, summarize, transcript, filename, directive)
 
 @app.command()
 def version():
