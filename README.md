@@ -72,7 +72,7 @@ Two main scripts:
 - This will summarize and extract intelligence insights into bullet point format, allowing you to get intel from long form multimedia in a condensed format.
 
 IntelReport.py options:
-- --model, -m NAME/PATH       : GPT4ALL LLM Model to use for analysis. (can download any model you wish via the front end application)
+- --model, -m NAME/PATH       : GPT4ALL LLM Model to use for analysis. (download more models from GPT4ALL application)
 - --n-threads, -t COUNT       : Number of threads to use for analysis.
 - --device, -d DEVICE         : Device to use for analysis, e.g. gpu, amd, nvidia, intel. Defaults to CPU.
 - --sum, -s TEXT              : String of text to summarize.
