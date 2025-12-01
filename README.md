@@ -1,6 +1,6 @@
 # IntelReport
 
-Offline LLM Summary & Intelligence Extraction From Long Transcripts
+Offline LLM Summary & Intelligence Extraction From Long Transcripts Using GPT4ALL
 
 IntelReport provides a small toolkit to fully offline:
 - Analyze long transcripts by running `intelreport.py`, which summarizes text in chunks from the perspective of an intelligence analyst.
