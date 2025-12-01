@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
-VisualStudioVersion = 17.14.36705.20 d17.14
+VisualStudioVersion = 17.14.36705.20
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{8EC462FD-D22E-90A8-E5CE-7E832BA40C5D}"
 	ProjectSection(SolutionItems) = preProject
@@ -10,9 +10,26 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 		src\TranscribeAudio.ps1 = src\TranscribeAudio.ps1
 	EndProjectSection
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Audio", "Audio", "{02EA681E-C7D8-13C7-8484-4AC65E1B71E8}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Archive", "Archive", "{0D26C04E-17D0-4983-915C-2E3FCFF369AD}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Output", "Output", "{D6603B3A-346A-44F3-9DD4-A84B488193AB}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Archive", "Archive", "{C5E8D5FF-E9A4-45AE-80AC-DD9AAAD0FF3B}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Reports", "Reports", "{9C51B6CB-A077-4B99-B7B7-E4709F8B13C4}"
+EndProject
 Global
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{02EA681E-C7D8-13C7-8484-4AC65E1B71E8} = {8EC462FD-D22E-90A8-E5CE-7E832BA40C5D}
+		{0D26C04E-17D0-4983-915C-2E3FCFF369AD} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
+		{D6603B3A-346A-44F3-9DD4-A84B488193AB} = {8EC462FD-D22E-90A8-E5CE-7E832BA40C5D}
+		{C5E8D5FF-E9A4-45AE-80AC-DD9AAAD0FF3B} = {D6603B3A-346A-44F3-9DD4-A84B488193AB}
+		{9C51B6CB-A077-4B99-B7B7-E4709F8B13C4} = {8EC462FD-D22E-90A8-E5CE-7E832BA40C5D}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {83C93F41-1C78-425E-8B5A-584D9911132D}
